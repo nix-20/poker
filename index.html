@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Texas Hold’em – 1v1</title>
+<style>
+  :root{
+    --bg:#0c0f12;--panel:#131922;--accent:#00ffd0;--accent2:#ff3fb2;--text:#eaf3ff;
+    --chip:#1f2a36;--good:#20e07a;--warn:#ffb703;--bad:#ff5a5f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1000px 600px at 70% -10%,#1a2430 0,#0c0f12 45%,#070a0e 100%);color:var(--text);font:16px/1.3 system-ui,Segoe UI,Roboto,Ubuntu,sans-serif}
+  header{padding:14px 18px;border-bottom:1px solid #1d2835;background:linear-gradient(180deg,#0f141b,transparent)}
+  h1{margin:0;font-size:18px;letter-spacing:.6px}
+  .table{max-width:1100px;margin:18px auto;padding:16px}
+  .board{display:flex;justify-content:center;gap:10px;margin:14px 0 6px}
+  .zone{display:flex;justify-content:center;gap:10px;margin:12px 0}
+  .panel{background:var(--panel);border:1px solid #1b2430;border-radius:14px;padding:14px;box-shadow:0 8px 30px #0007}
+  .chips{background:var(--chip);border-radius:999px;padding:6px 12px;display:inline-flex;gap:8px;align-items:center}
+  .pot{margin:8px auto 14px;display:flex;justify-content:center;gap:10px}
+  .stack{display:flex;align-items:center;gap:6px}
+  .card{width:74px;height:104px;border-radius:10px;background:#fff;border:2px solid #e8eef6;display:flex;align-items:center;justify-content:center;position:relative;
+        box-shadow:0 6px 18px #000a}
+  .card .rank{font-weight:700;font-size:28px}
+  .card .suit{font-size:18px;position:absolute;bottom:6px;right:8px}
+  .red{color:#e4435c}
+  .back{background:repeating-linear-gradient(45deg,#152131,#152131 8px,#0f1826 8px,#0f1826 16px);border-color:#0a1320}
+  .row{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .col{flex:1 1 320px}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:10px}
+  button{background:#172233;border:1px solid #233044;color:var(--text);padding:10px 14px;border-radius:10px;cursor:pointer;transition:.15s;min-width:110px;font-weight:700}
+  button:hover{transform:translateY(-1px);box-shadow:0 6px 16px #0007}
+  button:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none}
+  .pri{background:linear-gradient(90deg,var(--accent),var(--accent2));border-color:#335}
+  .warn{background:#2f2a15;border-color:#6d5710;color:#ffe29c}
+  .bad{background:#2b1314;border-color:#612427;color:#ffc2c4}
+  input[type=range]{width:280px}
+  .log{max-height:200px;overflow:auto;padding:10px;background:#0c1117;border:1px solid #1a2430;border-radius:10px;font-size:13px}
+  .badge{padding:4px 8px;border-radius:999px;background:#0e1722;border:1px solid #223044}
+  .hint{opacity:.8;font-size:12px}
+</style>
+</head>
+<body>
+<header><h1>Texas Hold’em – 1v1 (Tu vs CPU)</h1></header>
+
+<div class="table">
+  <div class="panel">
+    <div class="row">
+      <div class="col">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <div class="chips"><span class="badge">Piatto</span> <strong id="pot">0</strong></div>
+          <div class="chips"><span class="badge">Blinds</span> <span id="blinds">10/20</span></div>
+          <div class="chips"><span class="badge">Fase</span> <strong id="phase">Preflop</strong></div>
+        </div>
+        <div class="board" id="board"></div>
+        <div class="pot" id="betRow"></div>
+      </div>
+      <div class="col">
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:14px">
+    <div class="col panel">
+      <div class="zone" id="cpuZone"></div>
+      <div class="chips"><span class="badge">CPU stack</span> <strong id="cpuStack">1000</strong></div>
+    </div>
+    <div class="col panel">
+      <div class="zone" id="youZone"></div>
+      <div class="chips"><span class="badge">Il tuo stack</span> <strong id="youStack">1000</strong></div>
+      <div class="actions">
+        <button id="btnFold" class="bad">Fold</button>
+        <button id="btnCheckCall">Check / Call</button>
+        <button id="btnBet" class="pri">Bet / Raise</button>
+        <input id="betSize" type="range" min="20" max="500" step="10" value="60">
+        <span id="betHint" class="hint">puntata: 60</span>
+        <button id="btnNew" class="warn" disabled>Nuova mano</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===== Utilities & Deck ===== */
+const SUITS = ["♠","♥","♦","♣"];
+const RANKS = [2,3,4,5,6,7,8,9,10,11,12,13,14]; // 11=J 12=Q 13=K 14=A
+const rankToStr = r => r<=10? String(r) : ({11:"J",12:"Q",13:"K",14:"A"})[r];
+
+function newDeck(){
+  const d=[];
+  for(const s of SUITS) for(const r of RANKS) d.push({r,s});
+  // shuffle
+  for(let i=d.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [d[i],d[j]]=[d[j],d[i]]; }
+  return d;
+}
+function cardEl(card, faceUp=true){
+  const el=document.createElement('div'); el.className='card'+(faceUp?'':' back');
+  if(!faceUp) return el;
+  const red = (card.s==="♥"||card.s==="♦");
+  el.innerHTML = `<div class="rank ${red?'red':''}">${rankToStr(card.r)}</div><div class="suit ${red?'red':''}">${card.s}</div>`;
+  return el;
+}
+
+/* ===== Game State ===== */
+let deck, board=[], you=[], cpu=[], pot=0;
+let youStack=1000, cpuStack=1000, sb=10, bb=20;
+let phase="Preflop"; // Preflop/Flop/Turn/River
+let toAct="you"; // who acts
+let currentBet=0, youCommitted=0, cpuCommitted=0;
+const logEl = document.getElementById('log');
+
+function log(s){ logEl.innerHTML = `<div>• ${s}</div>` + logEl.innerHTML; }
+
+/* ===== Hand Eval (7-card) =====
+   Returns score object {cat, ranks[]} where higher is better.
+   cat: 8=straight flush,7=four,6=full,5=flush,4=straight,3=trips,2=two pair,1=pair,0=high
+*/
+function eval7(cards){
+  const bySuit={}; const counts={};
+  const ranks=cards.map(c=>c.r).sort((a,b)=>b-a);
+  const uniq=[...new Set(ranks)];
+  // Ace-low support for straights:
+  const wheel = uniq.includes(14) ? [...uniq,1] : uniq;
+
+  // counts map
+  for(const r of ranks) counts[r]=(counts[r]||0)+1;
+  // suit buckets
+  for(const c of cards){ (bySuit[c.s]||(bySuit[c.s]=[])).push(c.r); }
+  // flush?
+  let flushSuit=null, flushRanks=null;
+  for(const s in bySuit){ if(bySuit[s].length>=5){ flushSuit=s; flushRanks=bySuit[s].sort((a,b)=>b-a); break; } }
+
+  // straight helper
+  function bestStraight(arr){
+    arr=[...new Set(arr)].sort((a,b)=>b-a); // desc uniques
+    if(arr[0]!==1 && arr.includes(14)) arr.push(1); // add wheel if not already 1
+    let run=1, best=null;
+    for(let i=0;i<arr.length-1;i++){
+      if(arr[i]-1===arr[i+1]){ run++; if(run>=5) best=arr[i+1]+4; } else if(arr[i]!==arr[i+1]) run=1;
+    }
+    return best; // highest straight top card (e.g., 6 for A2345 -> 5)
+  }
+
+  // straight flush
+  if(flushSuit){
+    const topSF = bestStraight(bySuit[flushSuit]);
+    if(topSF) return {cat:8, ranks:[topSF]}; // only top matters
+  }
+
+  // groups
+  const groups = Object.entries(counts).map(([r,c])=>({r: +r, c}));
+  groups.sort((a,b)=> b.c-a.c || b.r-a.r);
+
+  // four / full house / trips / pairs
+  if(groups[0].c===4){
+    const kick = ranks.find(r=>r!==groups[0].r);
+    return {cat:7, ranks:[groups[0].r, kick]};
+  }
+  if(groups[0].c===3){
+    const secondTrips = groups.find((g,i)=> i>0 && g.c===3);
+    const pair = groups.find((g,i)=> i>0 && g.c===2);
+    if(secondTrips || pair){
+      const bestHouseTop = secondTrips ? Math.max(groups[0].r, secondTrips.r) : groups[0].r;
+      const bestHousePair = secondTrips ? Math.min(groups[0].r, secondTrips.r) : pair.r;
+      return {cat:6, ranks:[bestHouseTop, bestHousePair]};
+    }
+  }
+
+  if(flushSuit){ // flush
+    return {cat:5, ranks: flushRanks.slice(0,5)};
+  }
+
+  const straightTop = bestStraight(wheel);
+  if(straightTop){ // straight
+    return {cat:4, ranks:[straightTop]};
+  }
+
+  if(groups[0].c===3){
+    const kickers = ranks.filter(r=>r!==groups[0].r).slice(0,2);
+    return {cat:3, ranks:[groups[0].r, ...kickers]};
+  }
+  if(groups[0].c===2){
+    const secondPair = groups.find((g,i)=> i>0 && g.c===2);
+    if(secondPair){
+      const kick = ranks.find(r=>r!==groups[0].r && r!==secondPair.r);
+      const [hi,lo]= [groups[0].r, secondPair.r].sort((a,b)=>b-a);
+      return {cat:2, ranks:[hi,lo, kick]};
+    }else{
+      const kickers = ranks.filter(r=>r!==groups[0].r).slice(0,3);
+      return {cat:1, ranks:[groups[0].r, ...kickers]};
+    }
+  }
+  // high card
+  return {cat:0, ranks:ranks.slice(0,5)};
+}
+function cmpScore(a,b){
+  if(a.cat!==b.cat) return a.cat-b.cat;
+  for(let i=0;i<Math.max(a.ranks.length,b.ranks.length);i++){
+    const x=a.ranks[i]||0, y=b.ranks[i]||0;
+    if(x!==y) return x-y;
+  }
+  return 0;
+}
+
+/* ===== Rendering ===== */
+const boardEl = document.getElementById('board');
+const youZone = document.getElementById('youZone');
+const cpuZone = document.getElementById('cpuZone');
+const potEl = document.getElementById('pot');
+const phaseEl = document.getElementById('phase');
+const youStackEl = document.getElementById('youStack');
+const cpuStackEl = document.getElementById('cpuStack');
+const betRow = document.getElementById('betRow');
+
+function render(){
+  boardEl.innerHTML='';
+  board.forEach(c=>boardEl.appendChild(cardEl(c,true)));
+  youZone.innerHTML=''; you.forEach(c=>youZone.appendChild(cardEl(c,true)));
+  cpuZone.innerHTML=''; cpu.forEach((c,i)=> cpuZone.appendChild(cardEl(c, phase==='Showdown' ? true : false)));
+  potEl.textContent = pot;
+  phaseEl.textContent = phase;
+  youStackEl.textContent = youStack;
+  cpuStackEl.textContent = cpuStack;
+  betRow.innerHTML = `
+    <span class="chips"><span class="badge">Tu nel piatto</span> ${youCommitted}</span>
+    <span class="chips"><span class="badge">CPU nel piatto</span> ${cpuCommitted}</span>
+    <span class="chips"><span class="badge">Bet corrente</span> ${currentBet}</span>
+  `;
+}
+
+/* ===== Betting helpers ===== */
+function postBlinds(){
+  youCommitted = sb; cpuCommitted = bb; currentBet = bb;
+  youStack -= sb; cpuStack -= bb; pot = sb+bb;
+  log(`Postate le blind: SB=${sb} (Tu), BB=${bb} (CPU).`);
+  toAct = "you"; // SB preflop agisce per primo in heads-up
+}
+function canCheck(player){
+  return (player==='you' ? youCommitted : cpuCommitted) === currentBet;
+}
+function callAmount(player){
+  const committed = player==='you'? youCommitted : cpuCommitted;
+  return Math.max(0, currentBet - committed);
+}
+function doCall(player){
+  const due = callAmount(player);
+  if(due<=0) return;
+  if(player==='you'){
+    const pay = Math.min(due,youStack);
+    youStack-=pay; youCommitted+=pay; pot+=pay;
+    log(`Tu: call ${pay}.`);
+  }else{
+    const pay = Math.min(due,cpuStack);
+    cpuStack-=pay; cpuCommitted+=pay; pot+=pay;
+    log(`CPU: call ${pay}.`);
+  }
+}
+function doBet(player, size){
+  size = Math.max(bb, Math.floor(size/10)*10); // arrotonda
+  if(player==='you'){
+    const pay = Math.min(size, youStack);
+    youStack-=pay; youCommitted+=pay; pot+=pay;
+    currentBet = youCommitted;
+    log(`Tu: bet/raise ${pay}.`);
+  }else{
+    const pay = Math.min(size, cpuStack);
+    cpuStack-=pay; cpuCommitted+=pay; pot+=pay;
+    currentBet = cpuCommitted;
+    log(`CPU: bet/raise ${pay}.`);
+  }
+}
+
+/* ===== Streets & Flow ===== */
+function nextStreet(){
+  // reset round commitments when all matched
+  currentBet = 0; youCommitted = 0; cpuCommitted = 0;
+  if(phase==="Preflop"){
+    // flop
+    board.push(deck.pop(), deck.pop(), deck.pop());
+    phase="Flop"; toAct="you";
+  }else if(phase==="Flop"){
+    board.push(deck.pop()); phase="Turn"; toAct="you";
+  }else if(phase==="Turn"){
+    board.push(deck.pop()); phase="River"; toAct="you";
+  }else if(phase==="River"){
+    showdown(); return;
+  }
+  render();
+}
+
+/* ===== Showdown ===== */
+function showdown(){
+  phase="Showdown";
+  const youScore = eval7([...you,...board]);
+  const cpuScore = eval7([...cpu,...board]);
+  const diff = cmpScore(youScore,cpuScore);
+  render();
+  if(diff>0){ // you better
+    log(`Showdown: vinci tu! Piatto +${pot}.`);
+    youStack+=pot;
+  }else if(diff<0){
+    log(`Showdown: vince la CPU. Piatto +${pot}.`);
+    cpuStack+=pot;
+  }else{
+    const split = Math.floor(pot/2);
+    log(`Showdown: split pot. ${split} a testa.`);
+    youStack+=split; cpuStack+=split;
+  }
+  pot=0; document.getElementById('btnNew').disabled=false;
+  render();
+}
+
+/* ===== Simple CPU Logic ===== */
+function cpuAct(){
+  if(phase==="Showdown") return;
+  // decide action: evaluate current strength percentile-ish
+  const seen = [...cpu, ...board];
+  const score = eval7(seen);
+  const strengthBase = (score.cat/8); // 0..1 approx
+  // add street weight
+  const streetW = ({Preflop:.2, Flop:.5, Turn:.7, River:.9})[phase] || .5;
+  let strength = .15 + strengthBase*streetW;
+  // random bluff factor
+  strength += (Math.random()*0.2 - 0.05);
+
+  const toCall = callAmount('cpu');
+  if(toCall>0){
+    if(strength<.18 && Math.random()<.6){
+      // fold weak sometimes
+      log(`CPU: fold.`);
+      youStack += pot; pot=0; phase="Showdown"; render();
+      document.getElementById('btnNew').disabled=false; return;
+    }
+    // call or small raise
+    if(strength>.55 && Math.random()<.5){
+      const raise = Math.min(cpuStack, Math.max(bb, Math.floor((toCall + (pot*0.3))/10)*10));
+      doBet('cpu', cpuCommitted + toCall + raise - cpuCommitted);
+    }else{
+      doCall('cpu');
+    }
+  }else{
+    // can check or bet
+    if(strength>.5 && Math.random()<.65){
+      const size = Math.max(bb, Math.floor((pot*0.5 + 30)/10)*10);
+      doBet('cpu', size);
+    }else{
+      log(`CPU: check.`);
+    }
+  }
+  render();
+  // If both matched and someone acted, pass priority or move street
+  if(youCommitted===cpuCommitted && currentBet===Math.max(youCommitted,cpuCommitted)){
+    // both matched: advance
+    nextStreet();
+  }else{
+    toAct='you';
+  }
+}
+
+/* ===== Hand Setup ===== */
+function newHand(){
+  deck = newDeck(); board=[]; you=[]; cpu=[];
+  you.push(deck.pop(), deck.pop());
+  cpu.push(deck.pop(), deck.pop());
+  phase="Preflop"; pot=0; youCommitted=0; cpuCommitted=0; currentBet=0;
+  document.getElementById('btnNew').disabled=true;
+  postBlinds();
+  render();
+}
+
+/* ===== UI Actions ===== */
+const btnFold = document.getElementById('btnFold');
+const btnCall = document.getElementById('btnCheckCall');
+const btnBet  = document.getElementById('btnBet');
+const range   = document.getElementById('betSize');
+const hint    = document.getElementById('betHint');
+const btnNew  = document.getElementById('btnNew');
+
+range.addEventListener('input', ()=>{
+  const max = Math.max(50, Math.min(youStack, Math.floor((pot*0.75 + 200))));
+  range.max = Math.max(50,max);
+  hint.textContent = 'puntata: '+range.value;
+});
+function refreshButtons(){
+  btnFold.disabled = (phase==="Showdown");
+  btnBet.disabled  = (phase==="Showdown") || (youStack<=0);
+  btnCall.disabled = (phase==="Showdown");
+}
+btnFold.onclick = ()=>{
+  if(phase==="Showdown") return;
+  log('Tu: fold.');
+  cpuStack += pot; pot=0; phase="Showdown"; render();
+  btnNew.disabled=false; refreshButtons();
+};
+btnCall.onclick = ()=>{
+  if(phase==="Showdown") return;
+  if(canCheck('you')){ log('Tu: check.'); }
+  else { doCall('you'); }
+  render();
+  toAct='cpu'; cpuAct(); refreshButtons();
+};
+btnBet.onclick = ()=>{
+  if(phase==="Showdown") return;
+  let want = Number(range.value);
+  if(currentBet===0){
+    doBet('you', want);
+  }else{
+    const toCallAmt = callAmount('you');
+    want = toCallAmt + want; // raise over call
+    doBet('you', want);
+  }
+  render();
+  toAct='cpu'; cpuAct(); refreshButtons();
+};
+btnNew.onclick = ()=>{ newHand(); refreshButtons(); };
+
+newHand(); refreshButtons();
+</script>
+</body>
+</html>
